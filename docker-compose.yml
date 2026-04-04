@@ -1,0 +1,31 @@
+version: '3.8'
+services:
+  mongodb:
+    image: mongo:7
+    container_name: map_mongo
+    ports: ["27017:27017"]
+    volumes: [mongo_data:/data/db]
+    environment:
+      MONGO_INITDB_DATABASE: medical_absence_portal
+
+  backend:
+    build: ./backend
+    container_name: map_backend
+    ports: ["5000:5000"]
+    environment:
+      MONGO_URI: mongodb://mongodb:27017/medical_absence_portal
+      JWT_SECRET: change_this_in_production
+      NODE_ENV: production
+    depends_on: [mongodb]
+    volumes: [./backend/uploads:/app/uploads]
+
+  frontend:
+    build: ./frontend
+    container_name: map_frontend
+    ports: ["3000:80"]
+    environment:
+      REACT_APP_API_URL: http://localhost:5000/api
+    depends_on: [backend]
+
+volumes:
+  mongo_data:

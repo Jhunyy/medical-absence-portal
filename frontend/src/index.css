@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* WCAG Focus Styles */
+@layer base {
+  *:focus-visible {
+    @apply outline-none ring-2 ring-blue-500 ring-offset-2;
+  }
+
+  html {
+    @apply scroll-smooth;
+  }
+
+  /* High Contrast Support */
+  @media (prefers-contrast: high) {
+    body {
+      @apply text-black bg-white;
+    }
+    .dark body {
+      @apply text-white bg-black;
+    }
+  }
+
+  /* Reduced Motion */
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

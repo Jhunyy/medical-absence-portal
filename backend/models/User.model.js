@@ -1,0 +1,61 @@
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+
+const userSchema = new mongoose.Schema({
+  studentId: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true
+  },
+  employeeId: {
+    type: String,
+    unique: true,
+    sparse: true,
+    trim: true
+  },
+  firstName: { type: String, required: true, trim: true },
+  lastName:  { type: String, required: true, trim: true },
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+    lowercase: true,
+    trim: true,
+    match: [/^\S+@\S+\.\S+$/, 'Please provide a valid email']
+  },
+  password:  { type: String, required: true, minlength: 8, select: false },
+  role: {
+    type: String,
+    enum: ['student', 'health_officer', 'professor', 'admin'],
+    default: 'student'
+  },
+  department: { type: String, trim: true },
+  courses: [{ type: String }], // For professors: list of course codes they handle
+  isActive: { type: Boolean, default: true },
+  lastLogin: { type: Date },
+  profileImage: { type: String }
+}, {
+  timestamps: true
+});
+
+// Hash password before save
+userSchema.pre('save', async function () {
+  if (!this.isModified('password')) return;
+  const salt = await bcrypt.genSalt(12);
+  this.password = await bcrypt.hash(this.password, salt);
+});
+
+// Compare password
+userSchema.methods.comparePassword = async function (candidatePassword) {
+  return bcrypt.compare(candidatePassword, this.password);
+};
+
+// Virtual full name
+userSchema.virtual('fullName').get(function () {
+  return `${this.firstName} ${this.lastName}`;
+});
+
+userSchema.set('toJSON', { virtuals: true });
+
+module.exports = mongoose.model('User', userSchema);

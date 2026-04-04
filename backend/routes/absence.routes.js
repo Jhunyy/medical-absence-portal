@@ -1,0 +1,160 @@
+const express  = require('express');
+const router   = express.Router();
+
+const absenceController = require('../controllers/absence.controller');
+const authMiddleware    = require('../middleware/auth.middleware');
+const { uploadMedicalDocument, requireFile, optionalFile } = require('../middleware/upload.middleware');
+const {
+  validateCreateRequest,
+  validateUpdateRequest,
+  validateReview,
+  validateMongoId,
+  validateSearchQuery,
+  validate
+} = require('../middleware/validate.middleware');
+
+// Allow token via query param for direct browser file links
+router.use((req, res, next) => {
+  if (!req.headers.authorization && req.query.token) {
+    req.headers.authorization = `Bearer ${req.query.token}`;
+  }
+  next();
+});
+
+// All absence routes require authentication
+router.use(authMiddleware.protect);
+
+// ─── Student routes ───────────────────────────────────────────────────────────
+
+// Submit new request (file required on submit, optional on draft)
+router.post(
+  '/',
+  uploadMedicalDocument,   // multer runs first — populates req.file
+  validateCreateRequest,
+  validate,
+  (req, res, next) => {
+    // Require a file only if submitting (not saving as draft)
+    if (req.body.status === 'submitted' && !req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'A medical document is required when submitting a request.'
+      });
+    }
+    next();
+  },
+  absenceController.createRequest
+);
+
+// List / filter requests (role-scoped inside controller)
+router.get('/', validateSearchQuery, validate, absenceController.getRequests);
+
+// Search requests
+router.get('/search', validateSearchQuery, validate, absenceController.searchRequests);
+
+// Get single request
+router.get('/:id', validateMongoId, validate, absenceController.getRequestById);
+
+// Update draft (student only)
+router.put(
+  '/:id',
+  uploadMedicalDocument,   // file is optional on edit
+  validateUpdateRequest,
+  validate,
+  absenceController.updateRequest
+);
+
+// Delete draft (student) or any (admin)
+router.delete('/:id', validateMongoId, validate, absenceController.deleteRequest);
+
+const fs   = require('fs');
+const path = require('path');
+
+router.get(
+  '/:id/document',
+  (req, res, next) => {
+    if (!req.headers.authorization && req.query.token) {
+      req.headers.authorization = `Bearer ${req.query.token}`;
+    }
+    next();
+  },
+  async (req, res) => {
+    try {
+      const request = await require('../models/AbsenceRequest.model').findById(req.params.id);
+      if (!request?.medicalDocument?.filePath) {
+        return res.status(404).json({ success: false, message: 'Document not found.' });
+      }
+      if (!fs.existsSync(request.medicalDocument.filePath)) {
+        return res.status(404).json({ success: false, message: 'File no longer exists.' });
+      }
+      res.setHeader('Content-Disposition', `inline; filename="${request.medicalDocument.originalName}"`);
+      res.setHeader('Content-Type', request.medicalDocument.fileType);
+      res.sendFile(path.resolve(request.medicalDocument.filePath));
+    } catch (err) {
+      res.status(500).json({ success: false, message: 'Failed to retrieve document.' });
+    }
+  }
+);
+// ─── Health Officer routes ────────────────────────────────────────────────────
+router.patch(
+  '/:id/review',
+  authMiddleware.restrictTo('health_officer', 'admin'),
+  validateReview,
+  validate,
+  absenceController.reviewRequest
+);
+
+// ─── Professor routes ─────────────────────────────────────────────────────────
+router.post(
+  '/acknowledge',
+  authMiddleware.restrictTo('professor', 'admin'),
+  absenceController.professorAcknowledge
+);
+
+const { generateExcuseLetter } = require('../services/pdf.service');
+ 
+router.get(
+  '/:id/excuse-letter',
+  // Token via query param for direct browser download links
+  (req, res, next) => {
+    if (!req.headers.authorization && req.query.token) {
+      req.headers.authorization = `Bearer ${req.query.token}`;
+    }
+    next();
+  },
+  authMiddleware.protect,
+  async (req, res) => {
+    try {
+      const request = await require('../models/AbsenceRequest.model')
+        .findById(req.params.id)
+        .populate('student', 'firstName lastName studentId email department')
+        .populate('reviewedBy', 'firstName lastName');
+ 
+      if (!request) {
+        return res.status(404).json({ success: false, message: 'Request not found.' });
+      }
+      if (request.status !== 'approved') {
+        return res.status(400).json({ success: false, message: 'Excuse letter is only available for approved requests.' });
+      }
+ 
+      // Students can only download their own; staff can download any
+      const isOwner = request.student._id.toString() === req.user._id.toString();
+      const isStaff = ['health_officer', 'admin'].includes(req.user.role);
+      if (!isOwner && !isStaff) {
+        return res.status(403).json({ success: false, message: 'Access denied.' });
+      }
+ 
+      const pdfBuffer = await generateExcuseLetter(request);
+      const filename  = `excuse-letter-${request.requestId}.pdf`;
+ 
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', pdfBuffer.length);
+      res.send(pdfBuffer);
+    } catch (err) {
+      console.error('PDF generation error:', err);
+      res.status(500).json({ success: false, message: 'Failed to generate excuse letter.' });
+    }
+  }
+);
+
+module.exports = router;
