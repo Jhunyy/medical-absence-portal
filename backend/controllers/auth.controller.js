@@ -1,23 +1,19 @@
-const jwt = require('jsonwebtoken');
-const User = require('../models/User.model');
+const jwt      = require('jsonwebtoken');
+const User     = require('../models/User.model');
 const AuditLog = require('../models/AuditLog.model');
 
 const signToken = (id) =>
   jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN });
-
-// ─── Roles that can ONLY be assigned by an existing admin ─────────────────────
-const SELF_REGISTERABLE_ROLES = ['student'];
-const ADMIN_ONLY_ROLES        = ['health_officer', 'professor', 'admin'];
 
 // ─── REGISTER ─────────────────────────────────────────────────────────────────
 exports.register = async (req, res) => {
   try {
     const {
       firstName, lastName, email, password,
-      role, studentId, employeeId, department
+      role, studentId, employeeId, department,
+      clinicCode  // only required when role === 'health_officer'
     } = req.body;
 
-    // ── Basic presence checks ──────────────────────────────────────────────────
     if (!firstName || !lastName || !email || !password) {
       return res.status(400).json({
         success: false,
@@ -25,25 +21,52 @@ exports.register = async (req, res) => {
       });
     }
 
-    // ── Role security: block privilege escalation on self-registration ─────────
-    // If the request is NOT from an authenticated admin, only 'student' is allowed.
     const requestedRole = role || 'student';
-    const callerIsAdmin = req.user?.role === 'admin'; // req.user is set by auth middleware
 
-    if (ADMIN_ONLY_ROLES.includes(requestedRole) && !callerIsAdmin) {
+    // Only student and health_officer can self-register
+    if (!['student', 'health_officer'].includes(requestedRole)) {
       return res.status(403).json({
         success: false,
-        message: `Role '${requestedRole}' can only be assigned by an administrator.`
+        message: 'Admin accounts can only be created by an existing administrator.'
       });
     }
 
-    // ── Duplicate email check ──────────────────────────────────────────────────
+    // ── Clinic code gate for health officers ──────────────────────────────────
+    if (requestedRole === 'health_officer') {
+      const validCode = process.env.CLINIC_REGISTRATION_CODE;
+
+      if (!validCode) {
+        // Safety net: if the env variable isn't set, block registration entirely
+        console.error('❌ CLINIC_REGISTRATION_CODE is not set in .env');
+        return res.status(500).json({
+          success: false,
+          message: 'Health officer registration is currently unavailable. Contact the administrator.'
+        });
+      }
+
+      if (!clinicCode || clinicCode.trim() !== validCode) {
+        return res.status(403).json({
+          success: false,
+          message: 'Invalid clinic registration code. Please contact the university clinic administrator.'
+        });
+      }
+    }
+
+    // Students must provide a student ID
+    if (requestedRole === 'student' && !studentId?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Student ID is required for student accounts.'
+      });
+    }
+
+    // Check for duplicate email
     const existingUser = await User.findOne({ email: email.toLowerCase().trim() });
     if (existingUser) {
       return res.status(409).json({ success: false, message: 'Email already registered.' });
     }
 
-    // ── studentId uniqueness (only relevant for students) ─────────────────────
+    // Check for duplicate student ID
     if (requestedRole === 'student' && studentId) {
       const existingStudent = await User.findOne({ studentId: studentId.trim() });
       if (existingStudent) {
@@ -51,15 +74,14 @@ exports.register = async (req, res) => {
       }
     }
 
-    // ── Create user ────────────────────────────────────────────────────────────
     const user = await User.create({
-      firstName: firstName.trim(),
-      lastName:  lastName.trim(),
-      email:     email.toLowerCase().trim(),
+      firstName:  firstName.trim(),
+      lastName:   lastName.trim(),
+      email:      email.toLowerCase().trim(),
       password,
-      role:      requestedRole,
-      studentId: studentId?.trim(),
-      employeeId: employeeId?.trim(),
+      role:       requestedRole,
+      studentId:  requestedRole === 'student'        ? studentId?.trim()  : undefined,
+      employeeId: requestedRole === 'health_officer' ? employeeId?.trim() : undefined,
       department: department?.trim()
     });
 
@@ -69,11 +91,10 @@ exports.register = async (req, res) => {
       entity:    'User',
       entityId:  user._id.toString(),
       ipAddress: req.ip,
-      details:   `Role assigned: ${user.role}${callerIsAdmin ? ' (by admin)' : ' (self-registered)'}`
+      details:   `Role: ${user.role} (self-registered${requestedRole === 'health_officer' ? ' with clinic code' : ''})`
     });
 
     const token = signToken(user._id);
-
     res.status(201).json({
       success: true,
       message: 'Registration successful.',
@@ -88,7 +109,6 @@ exports.register = async (req, res) => {
       }
     });
   } catch (err) {
-    // Mongoose validation errors (e.g. invalid email format, minlength)
     if (err.name === 'ValidationError') {
       const messages = Object.values(err.errors).map(e => e.message);
       return res.status(400).json({ success: false, message: messages.join(' ') });
@@ -111,7 +131,6 @@ exports.login = async (req, res) => {
 
     const user = await User.findOne({ email: email.toLowerCase().trim() }).select('+password');
 
-    // Use a single generic message to prevent email enumeration attacks
     if (!user || !(await user.comparePassword(password))) {
       return res.status(401).json({ success: false, message: 'Invalid email or password.' });
     }
@@ -136,7 +155,6 @@ exports.login = async (req, res) => {
     });
 
     const token = signToken(user._id);
-
     res.json({
       success: true,
       message: 'Login successful.',
@@ -170,21 +188,14 @@ exports.logout = async (req, res) => {
       entityId:  req.user._id.toString(),
       ipAddress: req.ip
     });
-    res.json({ success: true, message: 'Logged out successfully.' });
-  } catch (err) {
-    // Logout should always succeed from the client's perspective
-    res.json({ success: true, message: 'Logged out successfully.' });
-  }
+  } catch { /* swallow */ }
+  res.json({ success: true, message: 'Logged out successfully.' });
 };
 
 // ─── ADMIN: CREATE STAFF ACCOUNT ─────────────────────────────────────────────
-// POST /api/auth/create-staff   (protected: admin only, via auth + restrictTo middleware)
 exports.createStaffAccount = async (req, res) => {
   try {
-    const {
-      firstName, lastName, email, password,
-      role, employeeId, department, courses
-    } = req.body;
+    const { firstName, lastName, email, password, role, employeeId, department } = req.body;
 
     if (!firstName || !lastName || !email || !password || !role) {
       return res.status(400).json({
@@ -193,10 +204,10 @@ exports.createStaffAccount = async (req, res) => {
       });
     }
 
-    if (!ADMIN_ONLY_ROLES.includes(role)) {
+    if (!['health_officer', 'admin'].includes(role)) {
       return res.status(400).json({
         success: false,
-        message: `Invalid staff role. Must be one of: ${ADMIN_ONLY_ROLES.join(', ')}.`
+        message: 'Invalid staff role. Must be health_officer or admin.'
       });
     }
 
@@ -212,12 +223,11 @@ exports.createStaffAccount = async (req, res) => {
       password,
       role,
       employeeId: employeeId?.trim(),
-      department: department?.trim(),
-      courses:    role === 'professor' ? (courses || []) : []
+      department: department?.trim()
     });
 
     await AuditLog.create({
-      user:      req.user._id,  // the admin who created this
+      user:      req.user._id,
       action:    'STAFF_ACCOUNT_CREATED',
       entity:    'User',
       entityId:  user._id.toString(),

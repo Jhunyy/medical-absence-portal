@@ -1,39 +1,38 @@
 const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
+const bcrypt   = require('bcryptjs');
 
 const userSchema = new mongoose.Schema({
   studentId: {
-    type: String,
+    type:   String,
     unique: true,
-    sparse: true,
-    trim: true
+    sparse: true, // allows null/undefined without unique conflict
+    trim:   true
   },
   employeeId: {
-    type: String,
+    type:   String,
     unique: true,
     sparse: true,
-    trim: true
+    trim:   true
   },
-  firstName: { type: String, required: true, trim: true },
-  lastName:  { type: String, required: true, trim: true },
+  firstName:  { type: String, required: true, trim: true },
+  lastName:   { type: String, required: true, trim: true },
   email: {
-    type: String,
+    type:     String,
     required: true,
-    unique: true,
+    unique:   true,
     lowercase: true,
-    trim: true,
-    match: [/^\S+@\S+\.\S+$/, 'Please provide a valid email']
+    trim:     true,
+    match:    [/^\S+@\S+\.\S+$/, 'Please provide a valid email']
   },
-  password:  { type: String, required: true, minlength: 8, select: false },
+  password:   { type: String, required: true, minlength: 8, select: false },
   role: {
-    type: String,
-    enum: ['student', 'health_officer', 'professor', 'admin'],
+    type:    String,
+    enum:    ['student', 'health_officer', 'admin'],
     default: 'student'
   },
   department: { type: String, trim: true },
-  courses: [{ type: String }], // For professors: list of course codes they handle
-  isActive: { type: Boolean, default: true },
-  lastLogin: { type: Date },
+  isActive:   { type: Boolean, default: true },
+  lastLogin:  { type: Date },
   profileImage: { type: String }
 }, {
   timestamps: true
@@ -46,12 +45,10 @@ userSchema.pre('save', async function () {
   this.password = await bcrypt.hash(this.password, salt);
 });
 
-// Compare password
 userSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };
 
-// Virtual full name
 userSchema.virtual('fullName').get(function () {
   return `${this.firstName} ${this.lastName}`;
 });

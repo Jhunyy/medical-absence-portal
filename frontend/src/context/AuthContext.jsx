@@ -6,7 +6,7 @@ const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser]       = useState(null);
+  const [user,    setUser]    = useState(null);
   const [loading, setLoading] = useState(true);
   const navigate              = useNavigate();
 
@@ -20,7 +20,7 @@ export const AuthProvider = ({ children }) => {
       .finally(() => setLoading(false));
   }, []);
 
-  // Listen for 401 fired by api.js interceptor — navigate without full reload
+  // Handle 401 from api.js interceptor — navigate without full reload
   useEffect(() => {
     const handleExpired = () => {
       setUser(null);
@@ -49,17 +49,20 @@ export const AuthProvider = ({ children }) => {
     navigate('/login', { replace: true });
   }, [navigate]);
 
+  // Role helpers — professor removed
   const isAuthenticated = !!user;
   const isStudent       = user?.role === 'student';
   const isHealthOfficer = user?.role === 'health_officer';
   const isAdmin         = user?.role === 'admin';
-  const isProfessor     = user?.role === 'professor';
-  const hasRole         = useCallback((...roles) => roles.flat().includes(user?.role), [user]);
+
+  // hasRole(['admin', 'health_officer']) for compound checks
+  const hasRole = useCallback((...roles) => roles.flat().includes(user?.role), [user]);
 
   return (
     <AuthContext.Provider value={{
       user, loading,
-      isAuthenticated, isStudent, isHealthOfficer, isAdmin, isProfessor, hasRole,
+      isAuthenticated, isStudent, isHealthOfficer, isAdmin,
+      hasRole,
       register, login, logout
     }}>
       {children}

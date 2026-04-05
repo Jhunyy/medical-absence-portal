@@ -62,10 +62,7 @@ exports.getRequests = async (req, res) => {
     // Role-based filtering
     if (req.user.role === 'student') {
       query.student = req.user._id;
-    } else if (req.user.role === 'professor') {
-      query['affectedCourses.courseCode'] = { $in: req.user.courses };
-      query.status = 'approved';
-    }
+    } 
 
     // Filters
     if (status)     query.status = status;

@@ -6,31 +6,28 @@ import {
   ClipboardDocumentCheckIcon, Cog6ToothIcon, XMarkIcon
 } from '@heroicons/react/24/outline';
 
+// Professor role removed — only 3 roles remain
 const navItems = {
   student: [
-    { to: '/dashboard', icon: HomeIcon, label: 'Dashboard' },
-    { to: '/submit',    icon: DocumentPlusIcon, label: 'Submit Request' },
-    { to: '/requests',  icon: ClipboardDocumentListIcon, label: 'My Requests' }
+    { to: '/dashboard', icon: HomeIcon,                    label: 'Dashboard' },
+    { to: '/requests/new', icon: DocumentPlusIcon,         label: 'Submit Request' },
+    { to: '/requests',  icon: ClipboardDocumentListIcon,   label: 'My Requests' }
   ],
   health_officer: [
-    { to: '/dashboard', icon: HomeIcon, label: 'Dashboard' },
-    { to: '/review',    icon: ClipboardDocumentCheckIcon, label: 'Review Queue' },
-    { to: '/requests',  icon: ClipboardDocumentListIcon, label: 'All Requests' }
-  ],
-  professor: [
-    { to: '/dashboard', icon: HomeIcon, label: 'Dashboard' },
-    { to: '/requests',  icon: ClipboardDocumentListIcon, label: 'Notices' }
+    { to: '/dashboard', icon: HomeIcon,                    label: 'Dashboard' },
+    { to: '/review',    icon: ClipboardDocumentCheckIcon,  label: 'Review Queue' },
+    { to: '/requests',  icon: ClipboardDocumentListIcon,   label: 'All Requests' }
   ],
   admin: [
-    { to: '/dashboard', icon: HomeIcon, label: 'Dashboard' },
-    { to: '/requests',  icon: ClipboardDocumentListIcon, label: 'All Requests' },
-    { to: '/review',    icon: ClipboardDocumentCheckIcon, label: 'Review Queue' },
-    { to: '/admin',     icon: Cog6ToothIcon, label: 'Admin Panel' }
+    { to: '/dashboard', icon: HomeIcon,                    label: 'Dashboard' },
+    { to: '/requests',  icon: ClipboardDocumentListIcon,   label: 'All Requests' },
+    { to: '/review',    icon: ClipboardDocumentCheckIcon,  label: 'Review Queue' },
+    { to: '/admin',     icon: Cog6ToothIcon,               label: 'Admin Panel' }
   ]
 };
 
 const Sidebar = ({ open, onClose }) => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const items = navItems[user?.role] || [];
 
   return (
@@ -61,7 +58,7 @@ const Sidebar = ({ open, onClose }) => {
             <p className="text-xs text-gray-500 dark:text-gray-400">University Health Portal</p>
           </div>
           <button
-            className="lg:hidden p-1 rounded-md text-gray-500 hover:bg-gray-100"
+            className="lg:hidden p-1 rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700"
             onClick={onClose}
             aria-label="Close sidebar"
           >
@@ -73,7 +70,8 @@ const Sidebar = ({ open, onClose }) => {
         <nav className="flex-1 p-4 space-y-1" aria-label="Main navigation">
           {items.map(({ to, icon: Icon, label }) => (
             <NavLink
-              key={to} to={to}
+              key={to}
+              to={to}
               onClick={onClose}
               className={({ isActive }) => `
                 flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
@@ -90,13 +88,13 @@ const Sidebar = ({ open, onClose }) => {
           ))}
         </nav>
 
-        {/* User Info */}
+        {/* User info + role badge */}
         <div className="p-4 border-t border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-bold">
+            <div className="h-9 w-9 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
               {user?.firstName?.[0]}{user?.lastName?.[0]}
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-gray-800 dark:text-white truncate">
                 {user?.firstName} {user?.lastName}
               </p>
